@@ -23,6 +23,32 @@ class AuthRequest(BaseModel):
     password: str
 
 
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
+    try:
+        response = supabase.auth.get_user(token)
+
+        if not response.user:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired token"
+            )
+
+        return response.user
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+
+
 @app.post("/auth/signup", status_code=201)
 def signup(request: AuthRequest):
     response = supabase.auth.sign_up({
@@ -53,6 +79,24 @@ def login(request: AuthRequest):
         )
 
 
+@app.post("/auth/logout", status_code=204)
+def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
+    try:
+        supabase.auth.sign_out()
+
+        return None
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+
+
 @app.get("/")
 def root():
     return {"message": "Server running and connected to Supabase"}
@@ -64,33 +108,17 @@ def public_info():
 
 
 @app.get("/protected/profile")
-def protected_profile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    token = credentials.credentials
+def protected_profile(user=Depends(get_current_user)):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at
+    }
 
-    try:
-        response = supabase.auth.get_user(token)
 
-        if not response.user:
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid or expired token"
-            )
-
-        user = response.user
-
-        return {
-            "id": user.id,
-            "email": user.email,
-            "created_at": user.created_at
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token"
-        )
+@app.get("/protected/dashboard")
+def protected_dashboard(user=Depends(get_current_user)):
+    return {
+        "message": "Welcome to your protected dashboard!",
+        "user_id": user.id
+    }
