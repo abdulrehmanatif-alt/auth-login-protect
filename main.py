@@ -1,7 +1,8 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client
 
@@ -13,6 +14,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
+
+security = HTTPBearer()
 
 
 class AuthRequest(BaseModel):
@@ -61,27 +64,33 @@ def public_info():
 
 
 @app.get("/protected/profile")
-def protected_profile(authorization: str | None = Header(default=None)):
-    if not authorization:
+def protected_profile(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
+    try:
+        response = supabase.auth.get_user(token)
+
+        if not response.user:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired token"
+            )
+
+        user = response.user
+
+        return {
+            "id": user.id,
+            "email": user.email,
+            "created_at": user.created_at
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception:
         raise HTTPException(
             status_code=401,
-            detail="Access token required"
+            detail="Invalid or expired token"
         )
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
-
-    token = authorization[7:].strip()
-
-    if not token:
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
-
-    return {
-        "message": "Token received. Verification will be added in Stage 3."
-    }
